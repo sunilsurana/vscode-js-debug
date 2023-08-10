@@ -100,6 +100,7 @@ export abstract class BreakpointSearch {
       return new Map();
     }
 
+    console.time('createMapping');
     const sourcePathToCompiled: MetadataMap = urlUtils.caseNormalizedMap();
     const cachedState = await this.state.load();
 
@@ -148,6 +149,11 @@ export abstract class BreakpointSearch {
         ...opts,
       });
 
+      console.log(`Exists = ${this.repo.getExists()}`);
+      console.log(`Not Exists = ${this.repo.getNotExists()}`);
+
+      console.timeEnd('createMapping');
+      console.log(JSON.stringify([...this.repo.getSorted().entries()]));
       // don't await, we can return early
       if (state) {
         this.state

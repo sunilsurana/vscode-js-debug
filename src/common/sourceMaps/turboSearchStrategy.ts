@@ -2,11 +2,9 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 
-import { promises as fsPromises } from 'fs';
 import globStream from 'glob-stream';
 import { inject, injectable } from 'inversify';
 import { FileGlobList, IExplodedGlob } from '../fileGlobList';
-import { LocalFsUtils } from '../fsUtils';
 import { ILogger, LogTag } from '../logging';
 import { truthy } from '../objUtils';
 import { fixDriveLetterAndSlashes } from '../pathUtils';
@@ -20,6 +18,11 @@ import { IGlobCached, TurboGlobStream } from './turboGlobStream';
 
 type CachedType<T> = CacheTree<IGlobCached<T>>;
 
+export class Counter {
+  public exists: number = 0;
+  public notExists: number = 0;
+  public myMap = new Map();
+}
 /**
  * A search strategy that leverages knowledge about the cache to avoid
  */
@@ -27,8 +30,19 @@ type CachedType<T> = CacheTree<IGlobCached<T>>;
 export class TurboSearchStrategy implements ISearchStrategy {
   constructor(@inject(ILogger) protected readonly logger: ILogger) {}
 
-  fsUtils: LocalFsUtils = new LocalFsUtils(fsPromises);
+  counter: Counter = new Counter();
 
+  public getExists(): number {
+    return this.counter.exists;
+  }
+
+  public getNotExists(): number {
+    return this.counter.notExists;
+  }
+
+  public getSorted(): Map<string, number> {
+    return new Map([...this.counter.myMap.entries()].sort((a, b) => b[1] - a[1]));
+  }
   /**
    * @inheritdoc
    */
@@ -87,7 +101,7 @@ export class TurboSearchStrategy implements ISearchStrategy {
       cache,
       filter: opts.filter,
       fileProcessor: file =>
-        createMetadataForFile(this.fsUtils, file).then(m => m && opts.processMap(m)),
+        createMetadataForFile(this.counter, file).then(m => m && opts.processMap(m)),
     });
 
     tgs.onError(({ path, error }) => {

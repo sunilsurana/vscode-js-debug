@@ -3,11 +3,13 @@
  *--------------------------------------------------------*/
 
 import { xxHash32 } from 'js-xxhash';
+import { dirname } from 'path';
 import { FileGlobList } from '../fileGlobList';
-import { IFsUtils, readfile, stat } from '../fsUtils';
+import { readfile, stat } from '../fsUtils';
 import { parseSourceMappingUrl } from '../sourceUtils';
 import { absolutePathToFileUrl, completeUrl, fileUrlToAbsolutePath, isDataUri } from '../urlUtils';
 import { ISourceMapMetadata } from './sourceMap';
+import { Counter } from './turboSearchStrategy';
 
 /**
  * A copy of vscode.RelativePattern, but we can't to import 'vscode' here.
@@ -29,6 +31,7 @@ export interface ISourcemapStreamOptions<T, R> {
   processMap: (child: Required<ISourceMapMetadata>) => T | Promise<T>;
   /** Second step to handle a processed map. `data` may have been read from cache. */
   onProcessedMap: (data: T) => R | Promise<R>;
+
   /**
    * Optionally filter for processed files. Only files matching this pattern
    * will have the mtime checked, and _may_ result in onProcessedMap calls.
@@ -58,6 +61,12 @@ export interface ISearchStrategy {
     files: FileGlobList,
     onChild: (child: string) => T | Promise<T>,
   ): Promise<T[]>;
+
+  getExists(): number;
+
+  getNotExists(): number;
+
+  getSorted(): Map<string, number>;
 }
 
 /**
@@ -66,19 +75,29 @@ export interface ISearchStrategy {
  * @param fileContents -- Read contents of the file
  */
 export const createMetadataForFile = async (
-  fsUtils: IFsUtils,
+  counter: Counter,
   compiledPath: string,
   fileContents?: string,
 ): Promise<Required<ISourceMapMetadata> | undefined> => {
   let sourceMapUrl;
   const possibleSourceMapURL = `${compiledPath}.map`;
-  if (await fsUtils.exists(possibleSourceMapURL)) {
+
+  if (await stat(possibleSourceMapURL)) {
     sourceMapUrl = possibleSourceMapURL;
+    counter.exists++;
   } else {
     if (typeof fileContents === 'undefined') {
       fileContents = await readfile(compiledPath);
     }
     sourceMapUrl = parseSourceMappingUrl(fileContents);
+    counter.notExists++;
+    let dir = dirname(compiledPath);
+    let value = counter.myMap.get(dir);
+    if (value && value > 0) {
+      counter.myMap.set(dir, value + 1);
+    } else {
+      counter.myMap.set(dir, 1);
+    }
   }
   if (!sourceMapUrl) {
     return;
